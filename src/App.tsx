@@ -1,10 +1,12 @@
 // @ts-nocheck
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import veilMark from './assets/veil-mark.png';
+import rabbySymbol from './assets/rabby-symbol.png';
 let requestRender = () => {};
 let focusRestore = null;
 
-const LOGO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2.5 4 6.5v5.2c0 4.6 3.4 8 8 9.8 4.6-1.8 8-5.200 8-9.800V6.5z"/><path d="M12 7.500 8 9.500v2.300c0 2.400 1.700 4 4 5 2.300-1 4-2.600 4-5V9.500z" fill="currentColor" fill-opacity=".35"/></svg>';
-const S={w:'off',net:'Ethereum (mock)',chainId:null,address:'',provider:null,accountHandler:null,chainHandler:null,walletError:'',hide:false,priv:null,view:'you',nav:false,
+const LOGO=`<img src="${veilMark}" alt="" />`;
+const S={w:'off',net:'Ethereum (mock)',chainId:null,address:'',walletName:'',provider:null,accountHandler:null,chainHandler:null,walletChooser:false,walletError:false,hide:false,priv:null,view:'you',nav:false,
  t:{tok:'ETH',side:'buy',amt:'500',step:0,cat:'Crypto',mode:'Spot',tf:'1d',q:'',route:'shield'},m:{a:'ETH',tf:'1d',side:'buy',amt:'250',st:0},p:{thr:10000,st:0,v:'you'},pay:{mode:'send',asset:'USDC',amount:'100',recipient:'',step:0,copied:false},exchange:{from:'ETH',to:'USDC',amount:'1',step:0},wallet:{mode:'',asset:'USDC',amount:'100',step:0},pref:{auto:true,warn:true,proto:true}};
 const TOK={ETH:3120.4,WBTC:94210.5,LINK:18.62,USDC:1};
 const AST=[['ETH',9840,'#8b7cf6'],['USDC',6200,'#5b6a7a'],['WBTC',3900,'#c8c9d0'],['LINK',1100,'#3e3a73']];
@@ -33,22 +35,21 @@ function clearWallet(){
  const p=S.provider;
  if(p&&S.accountHandler)p.removeListener?.('accountsChanged',S.accountHandler);
  if(p&&S.chainHandler)p.removeListener?.('chainChanged',S.chainHandler);
- S.w='off';S.net='Ethereum (mock)';S.address='';S.chainId=null;S.provider=null;S.accountHandler=null;S.chainHandler=null;S.walletError='';
+ S.w='off';S.net='Ethereum (mock)';S.address='';S.walletName='';S.chainId=null;S.provider=null;S.accountHandler=null;S.chainHandler=null;
 }
-async function toggleWallet(){
- if(S.w==='on'){clearWallet();requestRender();return}
+async function connectWallet(kind){
  if(S.w==='connecting')return;
- S.w='connecting';S.walletError='';requestRender();
+ S.walletChooser=false;S.walletError=false;S.w='connecting';requestRender();
  try{
-  const provider=await findRabbyProvider();
-  if(!provider)throw new Error('Rabby Wallet not detected. Install or unlock Rabby, then try again.');
+  const provider=kind==='rabby'?await findRabbyProvider():window.ethereum;
+  if(!provider)throw new Error('Wallet unavailable');
   const accounts=await provider.request({method:'eth_requestAccounts'});
-  if(!accounts?.length)throw new Error('Rabby did not return an account. Unlock it and try again.');
-  S.provider=provider;S.address=accounts[0];S.chainId=await provider.request({method:'eth_chainId'}).catch(()=>null);S.net=networkName(S.chainId);S.w='on';
+  if(!accounts?.length)throw new Error('No account');
+  S.provider=provider;S.walletName=kind==='rabby'?'Rabby':'Browser wallet';S.address=accounts[0];S.chainId=await provider.request({method:'eth_chainId'}).catch(()=>null);S.net=networkName(S.chainId);S.w='on';
   S.accountHandler=next=>{if(!next?.length){clearWallet()}else{S.address=next[0];S.w='on'}requestRender()};
   S.chainHandler=next=>{S.chainId=next;S.net=networkName(next);requestRender()};
   provider.on?.('accountsChanged',S.accountHandler);provider.on?.('chainChanged',S.chainHandler);
- }catch(error){S.w='off';S.walletError=error?.code===4001?'Connection request rejected in Rabby.':error?.message||'Could not connect to Rabby Wallet.'}
+ }catch{S.w='off';S.walletError=true}
  requestRender();
 }
 function tag(s){const p=PS[s];return `<span class="tag ${p[0]}">${s}</span>`}
@@ -58,9 +59,13 @@ function topbar(app){
  return `<header class="top"><div class="w"><a class="logo" href="#overview">${LOGO}VEIL</a>
  ${app?(S.w==='on'?`<span class="pill hide-m"><span class="dot"></span>${S.net}</span>`:`<select class="hide-m" style="width:190px" data-net aria-label="Demo network">${['Ethereum (mock)','Arbitrum (mock)','Base (mock)'].map(n=>`<option ${n==S.net?'selected':''}>${n}</option>`).join('')}</select>`):`<nav class="${S.nav?'open':''}">${links.map(l=>`<a href="#${l[0]}" class="${l[0]==cur?'on':''}">${l[1]}</a>`).join('')}</nav>`}
  <span style="flex:${app?1:0}"></span>
- <button class="btn p" data-act="wallet" ${S.w=='connecting'?'disabled':''}>${S.w=='off'?'Connect Rabby':S.w=='connecting'?'<span class="sp"></span>Connecting…':'● '+shortAddress()}</button>
- ${S.walletError?`<span class="wallet-error" role="alert">${esc(S.walletError)}</span>`:''}
+ <button class="btn p" data-act="wallet" ${S.w=='connecting'?'disabled':''}>${S.w=='off'?'Connect wallet':S.w=='connecting'?'<span class="sp"></span>Connecting…':'● '+shortAddress()}</button>
  ${app?'':'<button class="btn menu" data-act="nav" aria-label="Menu">☰</button>'}</div></header>`}
+function walletDialog(){
+ if(S.walletError)return `<div class="wallet-overlay" data-wallet-outside><section class="wallet-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-error-title"><button class="wallet-dialog-close" data-act="wallet-error-close" aria-label="Close">×</button><span class="eye">Wallet connection</span><h2 id="wallet-error-title">Couldn’t connect</h2><p>Check that your wallet is installed and unlocked, then try again.</p><div class="wallet-dialog-actions"><button class="btn p" data-act="wallet-retry">Choose wallet</button><button class="btn" data-act="wallet-error-close">Close</button></div></section></div>`;
+ if(!S.walletChooser)return '';
+ return `<div class="wallet-overlay" data-wallet-outside><section class="wallet-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-dialog-title"><button class="wallet-dialog-close" data-act="wallet-close" aria-label="Close">×</button><h2 id="wallet-dialog-title">Choose a wallet</h2><p>Veil will only request your public account and network. It will not ask for a signature.</p><div class="wallet-options"><button class="wallet-option" data-wallet-choice="rabby"><span class="wallet-option-icon rabby-wallet-logo"><img src="${rabbySymbol}" alt="" /></span><span><b>Rabby Wallet</b><small>Connect with Rabby</small></span><span class="wallet-option-arrow">›</span></button><button class="wallet-option" data-wallet-choice="browser" ${window.ethereum?'':'disabled'}><span class="wallet-option-icon"><svg class="browser-wallet-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01m2 7h6m-6 3h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span><b>Browser wallet</b><small>Use the wallet selected by your browser</small></span><span class="wallet-option-arrow">›</span></button></div><small class="wallet-dialog-note">You can disconnect at any time. No transaction will be sent.</small></section></div>`;
+}
 const MK=[['ETH',3120.4,2.4],['WBTC',94210.5,-1.1],['LINK',18.62,4.9],['SOL',182.3,-3.2],['ARB',0.94,1.7]];
 function ser(s,tf,chg){let x=0;for(const c of s+tf)x=(x*31+c.charCodeAt(0))%9973;const a=[];let v=0;for(let i=0;i<48;i++){x=(x*1103+12345)%65521;v+=(x/65521-.5)*2+chg*.04;a.push(v)}return a}
 const CHARTS={};
@@ -131,7 +136,7 @@ function learn(){
 function shell(body,id){
  const items=[['app','Overview'],['wallet','Wallet'],['payments','Send / Receive'],['exchange','Exchange'],['trade','Trade'],['portfolio','Portfolio'],['proofs','Proofs'],['activity','Activity'],['prefs','Settings']];
  return topbar(1)+`<div class="app"><aside class="side">${items.map(i=>`<a href="#${i[0]}" class="${i[0]==id?'on':''}">${i[1]}</a>`).join('')}</aside><main class="main" id="main">${body}</main></div>`}
-function gate(){return `<div class="empty"><p>Connect Rabby Wallet to view this account. Balances and transaction flows in Veil remain sample data.</p><button class="btn p" data-act="wallet">Connect Rabby Wallet</button></div>`}
+function gate(){return `<div class="empty"><p>Connect a wallet to view this account. Balances and transaction flows in Veil remain sample data.</p><button class="btn p" data-act="wallet">Connect wallet</button></div>`}
 function privInd(){
  const k=S.priv;
  return `<div style="display:flex;gap:8px;flex-wrap:wrap">${Object.keys(PS).map(s=>`<button class="pill" data-priv="${s}" aria-expanded="${k==s}"><span class="dot ${PS[s][0]=='r'?'pub':PS[s][0]=='x'?'par':''}"></span>${s}</button>`).join('')}</div>${k?`<div class="pop"><b>${PS[k][1]}</b><p>${PS[k][2]}</p></div>`:'<p class="demo" style="margin-top:8px">Select a state to see what it means.</p>'}`}
@@ -141,7 +146,7 @@ function dash(){
  if(S.w!='on')return shell(`<h2>Overview</h2>${gate()}`,'app');
  return shell(`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Overview</h2></div><p>Welcome back. Only you can see these numbers.</p>
 <div class="dgrid"><div class="card c4"><span class="demo">Private total balance · sample</span><div class="big">${R($(TOTAL))}</div><button class="btn" data-act="hide" style="margin-top:10px">${S.hide?'Show':'Hide'} balances</button></div>
-<div class="card c2"><span class="demo">${S.w==='on'?'Rabby network':'Demo network'}</span><div style="margin:8px 0">${S.net}</div><span class="tag x">${S.w==='on'?'Account connected':'Sample environment'}</span></div>
+<div class="card c2"><span class="demo">${S.w==='on'?'Connected network':'Demo network'}</span><div style="margin:8px 0">${S.net}</div><span class="tag x">${S.w==='on'?S.walletName+' connected':'Sample environment'}</span></div>
 <div class="card c3"><h3>Asset allocation</h3>${alloc()}</div><div class="card c3"><h3>Privacy status</h3>${privInd()}</div>
 <div class="card c4"><h3>Recent private activity · sample</h3>${actList(3)}</div><div class="card c2"><h3>Your money, your choice</h3><p>Move between wallet, payments, exchange, and crypto markets.</p><div style="display:flex;gap:7px;flex-wrap:wrap"><a class="btn p" href="#wallet">Wallet</a><a class="btn" href="#payments">Send / Receive</a><a class="btn" href="#exchange">Exchange</a><a class="btn" href="#trade">Trade</a></div></div></div>`,'app')}
 const TM={Crypto:[['ETH',3120.4,2.4],['WBTC',94210.5,-1.1],['LINK',18.62,4.9],['SOL',182.3,-3.2],['ARB',0.94,1.7]],'Tokenized assets':[['TSLA',374.2,4.9],['AMZN',221.84,-3.9],['NFLX',96.12,5.3]]};
@@ -166,7 +171,7 @@ function walletPage(){
  if(w.mode&&w.step===1)action=`<div class="pop"><b>Review ${w.mode} · ${w.amount} ${w.asset}</b><p>${w.mode==='deposit'?'Deposits may be publicly visible on the source network.':'Withdrawals may reveal the destination address and amount.'} Mock review only.</p><div style="display:flex;gap:8px;margin-top:10px"><button class="btn p" data-act="wallet-confirm">Confirm demo ${w.mode}</button><button class="btn" data-act="wallet-cancel">Cancel</button></div></div>`;
  else if(w.mode&&w.step===2)action=`<div class="pop"><span class="tag s">${w.mode==='deposit'?'Deposit':'Withdrawal'} simulated</span><p>No transaction was created or sent to a network.</p><button class="btn" data-act="wallet-cancel">Done</button></div>`;
  else action=`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn p" data-act="wallet-deposit">Deposit · mock</button><button class="btn" data-act="wallet-withdraw">Withdraw · mock</button></div>`;
- return shell(`<h2>Wallet</h2><p>Rabby account connection is live. Balances, deposits, withdrawals, and activity below are sample data.</p><div class="dgrid"><div class="card c4"><span class="demo">Sample wallet value</span><div class="big">${R($(TOTAL))}</div><button class="btn" data-act="hide" style="margin-top:10px">${S.hide?'Show':'Hide'} balances</button></div><div class="card c2"><span class="demo">Account state</span><div style="margin:8px 0">${S.w==='on'?'Rabby connected':'Guest view'}</div><span class="tag x">${S.w==='on'?shortAddress():'No wallet connected'}</span></div><div class="card c3"><h3>Supported token holdings</h3>${rows.map(r=>`<div class="row"><span>${r.asset}<small class="demo" style="display:block">${R(r.amount.toFixed(r.asset==='USDC'?2:4))}</small></span><span class="num">${R($(r.value))}</span></div>`).join('')}</div><div class="card c3"><h3>Asset allocation</h3>${alloc()}</div><div class="card c3"><h3>Deposit or withdraw</h3><p>Preview a wallet boundary action. Public chain activity may expose addresses, amounts, and timing.</p><label>Asset</label><select data-wallet-asset>${AST.map(a=>`<option ${w.asset===a[0]?'selected':''}>${a[0]}</option>`).join('')}</select><label>Amount</label><input data-wallet-amount inputmode="decimal" value="${esc(w.amount)}">${action}</div><div class="card c3"><h3>Privacy visibility</h3><p>Indicators describe information types, not an active Veil privacy guarantee.</p>${privInd()}</div><div class="card c6"><h3>Private transaction history</h3><p class="demo">Fictional account activity · account-owner view</p>${actList(4)}</div><div class="card c6"><h3>Account & recovery</h3><div class="row"><span>Wallet connection</span><span>${S.w==='on'?'Connected to Rabby':'Not connected'}</span></div>${S.w==='on'?`<div class="row"><span>Account address</span><span>${shortAddress()}</span></div>`:''}<div class="row"><span>Recovery setup</span><span class="tag x">Managed in Rabby · not Veil</span></div><p class="demo" style="margin-top:10px">Veil never receives your seed phrase or private key.</p></div></div>`,'wallet')
+ return shell(`<h2>Wallet</h2><p>Wallet connection is active. Balances, deposits, withdrawals, and activity below are sample data.</p><div class="dgrid"><div class="card c4"><span class="demo">Sample wallet value</span><div class="big">${R($(TOTAL))}</div><button class="btn" data-act="hide" style="margin-top:10px">${S.hide?'Show':'Hide'} balances</button></div><div class="card c2"><span class="demo">Account state</span><div style="margin:8px 0">${S.w==='on'?`${S.walletName} connected`:'Guest view'}</div><span class="tag x">${S.w==='on'?shortAddress():'No wallet connected'}</span></div><div class="card c3"><h3>Supported token holdings</h3>${rows.map(r=>`<div class="row"><span>${r.asset}<small class="demo" style="display:block">${R(r.amount.toFixed(r.asset==='USDC'?2:4))}</small></span><span class="num">${R($(r.value))}</span></div>`).join('')}</div><div class="card c3"><h3>Asset allocation</h3>${alloc()}</div><div class="card c3"><h3>Deposit or withdraw</h3><p>Preview a wallet boundary action. Public chain activity may expose addresses, amounts, and timing.</p><label>Asset</label><select data-wallet-asset>${AST.map(a=>`<option ${w.asset===a[0]?'selected':''}>${a[0]}</option>`).join('')}</select><label>Amount</label><input data-wallet-amount inputmode="decimal" value="${esc(w.amount)}">${action}</div><div class="card c3"><h3>Privacy visibility</h3><p>Indicators describe information types, not an active Veil privacy guarantee.</p>${privInd()}</div><div class="card c6"><h3>Private transaction history</h3><p class="demo">Fictional account activity · account-owner view</p>${actList(4)}</div><div class="card c6"><h3>Account & recovery</h3><div class="row"><span>Wallet connection</span><span>${S.w==='on'?`Connected to ${S.walletName}`:'Not connected'}</span></div>${S.w==='on'?`<div class="row"><span>Account address</span><span>${shortAddress()}</span></div>`:''}<div class="row"><span>Recovery setup</span><span class="tag x">Managed by connected wallet · not Veil</span></div><p class="demo" style="margin-top:10px">Veil never receives your seed phrase or private key.</p></div></div>`,'wallet')
 }
 function payments(){
  const p=S.pay,valid=Number(p.amount)>0&&p.recipient.trim().length>=3;
@@ -188,7 +193,7 @@ function trade(){
  const st=t.cat!='Crypto'?'Coming soon':perp?'Experimental':'Prototype · initial focus',rows=RW[t.route];
  let act;
  if(!sup)act='<button class="btn" disabled style="width:100%">Not available yet</button>';
- else if(S.w!='on')act='<button class="btn p" data-act="wallet" style="width:100%">Connect Wallet to continue</button>';
+ else if(S.w!='on')act='<button class="btn p" data-act="wallet" style="width:100%">Connect wallet to continue</button>';
  else if(t.step==0)act=`<button class="btn p" style="width:100%" data-act="review" ${bad?'disabled':''}>Review ${t.side}</button>`;
  else if(t.step==1)act=`<div class="pop"><b>Confirm ${t.side} ${$(amt)} of ${c[0]}?</b><p>Route: ${RN[t.route]}. The privacy preview describes this route, not a guarantee. Simulated; no signature requested.</p><div style="display:flex;gap:8px;margin-top:10px"><button class="btn p" data-act="confirm">Confirm</button><button class="btn" data-act="reset">Cancel</button></div></div>`;
  else if(t.step==2)act='<button class="btn" disabled style="width:100%"><span class="sp"></span>Submitting (simulated)…</button>';
@@ -216,7 +221,7 @@ function tradeOld(){
 <div id="er" class="demo" style="color:var(--rd)">${amt<=0?'Enter an amount above 0.':amt>TOTAL?'Above your demo balance.':''}</div></div>
 <div class="card" style="margin-top:14px"><h3>Execution preview</h3>${[['Price (demo)',$(px)],['You get',t.side=='buy'?got.toFixed(4)+' '+t.tok:$(got)],['Estimated fee (0.30%)',$(fee)],['Execution','Protected submission · experimental'],['Privacy status',tag('Shielded')+' <span class="demo">simulated</span>']].map(r=>`<div class="row"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}
 <p class="demo" style="margin-top:10px">Pending-trade protection is a planned feature. Deposits and withdrawals at the pool edge stay public.</p>
-${S.w!='on'?'<button class="btn p" data-act="wallet" style="width:100%">Connect Wallet to continue</button>':t.step==0?`<button class="btn p" style="width:100%" data-act="review" ${amt<=0||amt>TOTAL?'disabled':''}>Review ${t.side}</button>`:t.step==1?`<div class="pop"><b>Confirm ${t.side} ${$(amt)} of ${t.tok}?</b><p>Simulated. No wallet signature is requested.</p><div style="display:flex;gap:8px;margin-top:10px"><button class="btn p" data-act="confirm">Confirm</button><button class="btn" data-act="reset">Cancel</button></div></div>`:'<button class="btn" disabled style="width:100%"><span class="sp"></span>Generating demo proof &amp; submitting…</button>'}</div>`;
+${S.w!='on'?'<button class="btn p" data-act="wallet" style="width:100%">Connect wallet to continue</button>':t.step==0?`<button class="btn p" style="width:100%" data-act="review" ${amt<=0||amt>TOTAL?'disabled':''}>Review ${t.side}</button>`:t.step==1?`<div class="pop"><b>Confirm ${t.side} ${$(amt)} of ${t.tok}?</b><p>Simulated. No wallet signature is requested.</p><div style="display:flex;gap:8px;margin-top:10px"><button class="btn p" data-act="confirm">Confirm</button><button class="btn" data-act="reset">Cancel</button></div></div>`:'<button class="btn" disabled style="width:100%"><span class="sp"></span>Generating demo proof &amp; submitting…</button>'}</div>`;
  return shell(`<h2>Trade</h2><p>Interactive mock. <span class="tag x">Prototype</span></p><div style="max-width:520px">${body}</div>`,'trade')}
 /* ---------- portfolio ---------- */
 function portfolio(){
@@ -246,10 +251,14 @@ ${p.st==0?`<button class="btn p" style="margin-top:12px" data-act="prove" ${ok?'
 function activity(){return shell(`<h2>Activity</h2><p>Private transaction and trading history for the account owner. Entries shown here are fictional demo records.</p>${S.w!='on'?gate():`<div class="card">${actList(4)}</div>`}`,'activity')}
 function prefs(){
  const T=[['auto','Hide balances by default'],['warn','Warn before public transactions'],['proto','Use protected execution when available']];
- return shell(`<h2>Settings</h2><p>Wallet connection, recovery readiness, and privacy preferences.</p><div class="card" style="max-width:560px;margin-bottom:16px"><h3>Wallet & account</h3><div class="row"><span>Status</span><span>${S.w=='on'?'Connected to Rabby':'Not connected'}</span></div><div class="row"><span>Network</span><span>${S.net}</span></div><div class="row"><span>Account</span><span>${S.w=='on'?shortAddress():'No wallet connected'}</span></div><div class="row"><span>Recovery</span><span class="tag x">Managed in Rabby</span></div><a class="btn" href="#wallet" style="display:inline-block;margin-top:12px">Wallet and recovery details</a><p class="demo" style="margin-top:10px">Connection shares your public address and selected network with this site. It does not grant transaction approval.</p></div><div class="card" style="max-width:560px"><h3>Privacy preferences</h3>${T.map(t=>`<div class="tgl"><span>${t[1]}</span><button class="sw ${S.pref[t[0]]?'on':''}" role="switch" aria-checked="${S.pref[t[0]]}" aria-label="${t[1]}" data-pref="${t[0]}"></button></div>`).join('')}<p class="demo" style="margin-top:12px">Veil will never ask for a seed phrase or private key.</p></div>`,'prefs')}
+ return shell(`<h2>Settings</h2><p>Wallet connection, recovery readiness, and privacy preferences.</p><div class="card" style="max-width:560px;margin-bottom:16px"><h3>Wallet & account</h3><div class="row"><span>Status</span><span>${S.w=='on'?`Connected to ${S.walletName}`:'Not connected'}</span></div><div class="row"><span>Network</span><span>${S.net}</span></div><div class="row"><span>Account</span><span>${S.w=='on'?shortAddress():'No wallet connected'}</span></div><div class="row"><span>Recovery</span><span class="tag x">Managed by connected wallet</span></div><a class="btn" href="#wallet" style="display:inline-block;margin-top:12px">Wallet and recovery details</a><p class="demo" style="margin-top:10px">Connection shares your public address and selected network with this site. It does not grant transaction approval.</p></div><div class="card" style="max-width:560px"><h3>Privacy preferences</h3>${T.map(t=>`<div class="tgl"><span>${t[1]}</span><button class="sw ${S.pref[t[0]]?'on':''}" role="switch" aria-checked="${S.pref[t[0]]}" aria-label="${t[1]}" data-pref="${t[0]}"></button></div>`).join('')}<p class="demo" style="margin-top:12px">Veil will never ask for a seed phrase or private key.</p></div>`,'prefs')}
+function footer(){
+ const groups=[['Platform',[['Overview','app'],['Wallet','wallet'],['Send / Receive','payments'],['Exchange','exchange']]],['Markets',[['Trade','trade'],['Portfolio','portfolio']]],['Privacy',[['Proofs','proofs'],['Activity','activity'],['Settings','prefs']]],['Resources',[['Learn','learn']]]];
+ return `<footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><a class="logo" href="#overview">${LOGO}VEIL</a><a class="footer-x" href="https://x.com/" target="_blank" rel="noopener noreferrer" aria-label="X"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-6.8 7.8L23.2 22h-6.3L12 14.6 5.5 22H2.4l7.3-8.4L2 2h6.5l4.5 6.8L18.9 2Zm-1.1 18h1.7L7.5 3.9H5.7L17.8 20Z" fill="currentColor"/></svg></a></div><nav class="footer-nav" aria-label="Footer navigation">${groups.map(([title,links])=>`<div class="footer-column"><h3>${title}</h3>${links.map(([label,route])=>`<a href="#${route}">${label}</a>`).join('')}</div>`).join('')}</nav></div></footer>`;
+}
 /* ---------- router ---------- */
 const PG={overview:landing,learn:learn,app:dash,wallet:walletPage,payments:payments,exchange:exchangePage,trade:trade,portfolio:portfolio,proofs:proofs,activity:activity,prefs:prefs};
-function pageMarkup(){const k=location.hash.slice(1)||'overview';return (PG[k]||landing)();}
+function pageMarkup(){const k=location.hash.slice(1)||'overview';return (PG[k]||landing)()+footer()+walletDialog();}
 function go(f){f();requestRender()}
 
 function installDelegatedHandlers(root){
@@ -270,7 +279,9 @@ root.addEventListener('pointerout',e=>{
  wrap.querySelector('[data-cross]').style.display='none';wrap.querySelector('[data-point]').style.display='none';wrap.querySelector('[data-axis-date]').style.display='none';wrap.querySelector('[data-tip]').style.display='none';wrap.querySelector('[data-readout]').textContent='Move over a candle for OHLC details';
 });
 root.addEventListener('click',e=>{
- const b=e.target.closest('[data-act],[data-priv],[data-view],[data-side],[data-pref],[data-scroll],[data-mk],[data-tf],[data-ttf],[data-ms],[data-cat],[data-mode],[data-mkt],[data-route],[data-pv],[data-pay-mode]');if(!b)return;const d=b.dataset;
+ const b=e.target.closest('[data-act],[data-wallet-choice],[data-wallet-outside],[data-priv],[data-view],[data-side],[data-pref],[data-scroll],[data-mk],[data-tf],[data-ttf],[data-ms],[data-cat],[data-mode],[data-mkt],[data-route],[data-pv],[data-pay-mode]');if(!b)return;const d=b.dataset;
+ if(b.hasAttribute('data-wallet-outside')){if(e.target===b)go(()=>{S.walletChooser=false;S.walletError=false});return}
+ if(d.walletChoice)return connectWallet(d.walletChoice);
  if(d.scroll){e.preventDefault();document.getElementById(d.scroll).scrollIntoView({behavior:'smooth'});return}
  if(d.cat)return go(()=>{S.t.cat=d.cat;S.t.tok=TM[d.cat][0][0];S.t.step=0;S.t.q=''});
  if(d.mode)return go(()=>{S.t.mode=d.mode;S.t.step=0});
@@ -301,7 +312,9 @@ root.addEventListener('click',e=>{
  if(a=='exchange-review')go(()=>S.exchange.step=1);
  if(a=='exchange-confirm')go(()=>{const q=S.exchange;ACT.unshift([`Demo exchange ${q.amount} ${q.from} → ${q.to}`,'Demo only','Just now']);S.exchange.step=2});
  if(a=='exchange-cancel'||a=='exchange-reset')go(()=>S.exchange.step=0);
- if(a=='wallet'){toggleWallet()}
+ if(a=='wallet'){if(S.w==='on'){clearWallet();requestRender()}else go(()=>{S.walletError=false;S.walletChooser=true})}
+ if(a=='wallet-close'||a=='wallet-error-close')go(()=>{S.walletChooser=false;S.walletError=false});
+ if(a=='wallet-retry')go(()=>{S.walletError=false;S.walletChooser=true});
  if(a=='mgo'){S.m.st=1;requestRender();setTimeout(()=>{S.m.st=2;requestRender()},1400)}
  if(a=='mreset')go(()=>S.m.st=0);
  if(a=='review')go(()=>S.t.step=1);
@@ -349,8 +362,10 @@ function App(){
    const root=rootRef.current;if(!root)return;
    installDelegatedHandlers(root);
    const onHash=()=>{S.nav=false;S.priv=null;requestRender();window.scrollTo(0,0)};
+   const onWalletKey=e=>{if(e.key==='Escape'&&(S.walletChooser||S.walletError)){S.walletChooser=false;S.walletError=false;requestRender()}};
    window.addEventListener('hashchange',onHash);
-   return ()=>window.removeEventListener('hashchange',onHash);
+   window.addEventListener('keydown',onWalletKey);
+   return ()=>{window.removeEventListener('hashchange',onHash);window.removeEventListener('keydown',onWalletKey)};
  },[]);
  useEffect(()=>{
    let busy=false;
