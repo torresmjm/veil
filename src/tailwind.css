@@ -1,0 +1,5 @@
+/* Tailwind utilities are available for new UI. The base reset is deliberately
+   omitted so the existing Veil styles keep their current appearance. */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
